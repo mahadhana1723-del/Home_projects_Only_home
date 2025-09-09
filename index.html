@@ -1,0 +1,347 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <title>Daily Expense Tracker</title>
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+  <style>
+    body {
+      font-family: Arial, sans-serif;
+      margin: 20px;
+      background: #f4f6f9;
+    }
+    h2, h3 {
+      text-align: center;
+    }
+    table {
+      width: 100%;
+      border-collapse: collapse;
+      background: white;
+      margin-bottom: 15px;
+    }
+    th, td {
+      border: 1px solid #1d1c1c;
+      padding: 8px;
+      text-align: center;
+    }
+    th {
+      background: #4CAF50;
+      color: white;
+    }
+    input, button {
+      padding: 6px;
+      border: 1px solid #ccc;
+      border-radius: 4px;
+    }
+    button {
+      background: #4CAF50;
+      color: white;
+      cursor: pointer;
+    }
+    button:hover {
+      background: #45a049;
+    }
+    .controls {
+      text-align: center;
+      margin: 10px 0;
+    }
+    .form-row {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 10px;
+      justify-content: center;
+      margin-bottom: 15px;
+    }
+    .form-row input {
+      flex: 1;
+      min-width: 100px;
+    }
+    /* Charts side by side */
+    .chart-row {
+      display: flex;
+      gap: 20px;
+      justify-content: center;
+      flex-wrap: wrap;
+      margin-bottom: 20px;
+    }
+    .chart-row canvas {
+      width: 280px !important;
+      height: 220px !important;
+      background: #fff;
+      border-radius: 10px;
+      box-shadow: 0 2px 5px rgba(0,0,0,0.1);
+      padding: 10px;
+    }
+    @media (max-width: 900px) {
+      .chart-row {
+        flex-direction: column;
+        align-items: center;
+      }
+      .chart-row canvas {
+        width: 90% !important;
+        height: 250px !important;
+      }
+    }
+    /* Day separation colors */
+    .day-group-0 { background-color: #7cdb84c2; }
+    .day-group-1 { background-color: #6898bbd0; }
+    .day-group-2 { background-color: #dfca88cc; }
+    .day-group-3 { background-color: #df91abd8; }
+    .day-group-4 { background-color: #d87ae7ce; }
+  </style>
+</head>
+<body>
+  <h2>Daily Expense Tracker</h2>
+
+  <!-- Expense Entry Form -->
+  <div class="form-row">
+    <input type="date" id="dateInput">
+    <input type="text" id="accountInput" placeholder="Name">
+    <input type="number" id="hdfcInput" placeholder="HDFC">
+    <input type="number" id="sbiInput" placeholder="SBI">
+    <input type="number" id="privateInput" placeholder="Account">
+    <button onclick="addExpense()">Add Expense</button>
+  </div>
+
+  <!-- Controls -->
+  <div class="controls">
+    <button onclick="exportData()">Export CSV</button>
+    <button onclick="resetData()">Reset Data</button>
+    <input type="file" id="fileInput" accept=".csv" onchange="importData(event)">
+  </div>
+
+  <!-- Expense Table -->
+  <table id="expenseTable">
+    <thead>
+      <tr>
+        <th>Date</th>
+        <th>Name of Expense</th>
+        <th>HDFC</th>
+        <th>SBI</th>
+        <th>Account</th>
+        <th>Total</th>
+        <th>Action</th>
+      </tr>
+    </thead>
+    <tbody></tbody>
+    <tfoot>
+      <tr>
+        <th colspan="2">Grand Total</th>
+        <th id="hdfcTotal">0</th>
+        <th id="sbiTotal">0</th>
+        <th id="privateTotal">0</th>
+        <th id="grandTotal">0</th>
+        <th></th>
+      </tr>
+    </tfoot>
+  </table>
+
+  <!-- Dashboard -->
+  <h3>Budget Dashboard</h3>
+  <div class="chart-row">
+    <canvas id="pieChart"></canvas>
+    <canvas id="barChart"></canvas>
+    <canvas id="lineChart"></canvas>
+  </div>
+
+  <script>
+    const tableBody = document.querySelector("#expenseTable tbody");
+
+    function addExpense() {
+      const date = document.getElementById("dateInput").value;
+      const account = document.getElementById("accountInput").value;
+      const hdfc = document.getElementById("hdfcInput").value || 0;
+      const sbi = document.getElementById("sbiInput").value || 0;
+      const privateAcc = document.getElementById("privateInput").value || 0;
+
+      if (!date || !account) {
+        alert("Please enter Date and Account");
+        return;
+      }
+      addRow(date, account, hdfc, sbi, privateAcc);
+
+      document.getElementById("accountInput").value = "";
+      document.getElementById("hdfcInput").value = "";
+      document.getElementById("sbiInput").value = "";
+      document.getElementById("privateInput").value = "";
+    }
+
+    function addRow(date, account, hdfc, sbi, privateAcc) {
+      const row = tableBody.insertRow();
+      row.innerHTML = `
+        <td><input type="date" value="${date}"></td>
+        <td><input type="text" value="${account}"></td>
+        <td><input type="number" value="${hdfc}" oninput="updateTotals()"></td>
+        <td><input type="number" value="${sbi}" oninput="updateTotals()"></td>
+        <td><input type="number" value="${privateAcc}" oninput="updateTotals()"></td>
+        <td class="rowTotal">0</td>
+        <td><button onclick="deleteRow(this)">Delete</button></td>
+      `;
+      updateTotals();
+      saveData();
+    }
+
+    function deleteRow(btn) {
+      btn.closest("tr").remove();
+      updateTotals();
+      saveData();
+    }
+
+    function updateTotals() {
+      let hdfcSum = 0, sbiSum = 0, privateSum = 0, grandSum = 0;
+      document.querySelectorAll("#expenseTable tbody tr").forEach(row => {
+        const hdfc = parseFloat(row.cells[2].children[0].value) || 0;
+        const sbi = parseFloat(row.cells[3].children[0].value) || 0;
+        const privateAcc = parseFloat(row.cells[4].children[0].value) || 0;
+        const rowTotal = hdfc + sbi + privateAcc;
+
+        row.querySelector(".rowTotal").innerText = rowTotal.toFixed(2);
+
+        hdfcSum += hdfc;
+        sbiSum += sbi;
+        privateSum += privateAcc;
+        grandSum += rowTotal;
+      });
+      document.getElementById("hdfcTotal").innerText = hdfcSum.toFixed(2);
+      document.getElementById("sbiTotal").innerText = sbiSum.toFixed(2);
+      document.getElementById("privateTotal").innerText = privateSum.toFixed(2);
+      document.getElementById("grandTotal").innerText = grandSum.toFixed(2);
+
+      saveData();
+      updateCharts(hdfcSum, sbiSum, privateSum);
+      applyDayColors();
+    }
+
+    function applyDayColors() {
+      let lastDate = "";
+      let colorIndex = -1;
+      document.querySelectorAll("#expenseTable tbody tr").forEach(row => {
+        const date = row.cells[0].children[0].value;
+        if (date !== lastDate) {
+          colorIndex = (colorIndex + 1) % 5;
+          lastDate = date;
+        }
+        row.className = "day-group-" + colorIndex;
+      });
+    }
+
+    function saveData() {
+      const rows = [];
+      document.querySelectorAll("#expenseTable tbody tr").forEach(row => {
+        rows.push({
+          date: row.cells[0].children[0].value,
+          account: row.cells[1].children[0].value,
+          hdfc: row.cells[2].children[0].value,
+          sbi: row.cells[3].children[0].value,
+          privateAcc: row.cells[4].children[0].value
+        });
+      });
+      localStorage.setItem("expenses", JSON.stringify(rows));
+    }
+
+    function loadData() {
+      const data = JSON.parse(localStorage.getItem("expenses") || "[]");
+      data.forEach(r => addRow(r.date, r.account, r.hdfc, r.sbi, r.privateAcc));
+    }
+
+    function exportData() {
+      const fileName = prompt("Enter file name to save:", "expenses");
+      if (!fileName) return;
+
+      const rows = [["Date","Account","HDFC","SBI","Private"]];
+      document.querySelectorAll("#expenseTable tbody tr").forEach(row => {
+        rows.push([
+          row.cells[0].children[0].value,
+          row.cells[1].children[0].value,
+          row.cells[2].children[0].value,
+          row.cells[3].children[0].value,
+          row.cells[4].children[0].value
+        ]);
+      });
+      const csv = rows.map(r => r.join(",")).join("\n");
+      const blob = new Blob([csv], { type: "text/csv" });
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement("a");
+      a.href = url;
+      a.download = fileName + ".csv";
+      a.click();
+      URL.revokeObjectURL(url);
+    }
+
+    function importData(event) {
+      const file = event.target.files[0];
+      if (!file) return;
+      const reader = new FileReader();
+      reader.onload = function(e) {
+        const lines = e.target.result.split("\n").slice(1);
+        tableBody.innerHTML = "";
+        lines.forEach(line => {
+          if (line.trim() === "") return;
+          const [date, account, hdfc, sbi, privateAcc] = line.split(",");
+          addRow(date, account, hdfc, sbi, privateAcc);
+        });
+        updateTotals();
+      };
+      reader.readAsText(file);
+    }
+
+    function resetData() {
+      if (confirm("Are you sure you want to reset all data?")) {
+        tableBody.innerHTML = "";
+        localStorage.removeItem("expenses");
+        updateTotals();
+      }
+    }
+
+    // Charts
+    let pieChart, barChart, lineChart;
+    function updateCharts(hdfc, sbi, privateAcc) {
+      const data = [hdfc, sbi, privateAcc];
+
+      if (pieChart) pieChart.destroy();
+      if (barChart) barChart.destroy();
+      if (lineChart) lineChart.destroy();
+
+      pieChart = new Chart(document.getElementById("pieChart"), {
+        type: "pie",
+        data: {
+          labels: ["HDFC", "SBI", "Private"],
+          datasets: [{ data, backgroundColor: ["#4CAF50","#2196F3","#FF9800"] }]
+        },
+        options: { plugins: { legend: { position: "bottom" } } }
+      });
+
+      barChart = new Chart(document.getElementById("barChart"), {
+        type: "bar",
+        data: {
+          labels: ["HDFC", "SBI", "Private"],
+          datasets: [{ label: "Expenses", data, backgroundColor: ["#4CAF50","#2196F3","#FF9800"] }]
+        },
+        options: { responsive: true, scales: { y: { beginAtZero: true } } }
+      });
+
+      lineChart = new Chart(document.getElementById("lineChart"), {
+        type: "line",
+        data: {
+          labels: ["HDFC", "SBI", "Private"],
+          datasets: [{
+            label: "Trend",
+            data,
+            borderColor: "#1565c0",
+            backgroundColor: "rgba(21,101,192,0.2)",
+            fill: true,
+            tension: 0.3
+          }]
+        },
+        options: { responsive: true, scales: { y: { beginAtZero: true } } }
+      });
+    }
+
+    // Init
+    document.getElementById("dateInput").value = new Date().toISOString().split("T")[0];
+    loadData();
+    updateTotals();
+  </script>
+</body>
+</html>
